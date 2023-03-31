@@ -7,7 +7,7 @@ import com.metrics.humidity.SensorFactory.Command
 
 import java.io.File
 import java.util.concurrent.TimeUnit
-import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.concurrent.{Await, ExecutionContextExecutor}
 import scala.io.Source
 
 
@@ -16,7 +16,7 @@ object Main extends App {
     ActorSystem(SensorFactory.behaviour(), "HumidityMetrics")
   implicit val scheduler: Scheduler = system.scheduler
   implicit val context: ExecutionContextExecutor = system.executionContext
-  implicit val timeout: Timeout = Timeout.apply(4, TimeUnit.SECONDS)
+  implicit val timeout: Timeout = Timeout.apply(10, TimeUnit.SECONDS)
 
   import SensorFactory._
 
@@ -39,33 +39,27 @@ object Main extends App {
 
   println("Num of processed files: " + files.length)
 
-  system.ask(replyTo => TotalProcessed(replyTo)) map { totalProcessed =>
-    println("Num of processed measurements: " + totalProcessed)
-  } recoverWith {
-        case e: Exception => println(e.toString)
-          Future()
-  }
+  private val totalPassed: Int = Await.result(system.ask(replyTo => TotalProcessed(replyTo)), timeout.duration)
 
-  system.ask(replyTo => TotalFailures(replyTo)) map { totalFailed =>
-    println("Num of failed measurements: " + totalFailed)
-  }
+  println("Num of processed measurements: " + totalPassed)
 
-  system.ask(replyTo => GetAllSensorData(replyTo)) map {
+  private val totalFailed: Int = Await.result(system.ask(replyTo => TotalFailures(replyTo)), timeout.duration)
+
+  println("Num of failed measurements: " + totalFailed)
+
+  println("sensor-name,min,average,max")
+  val orderedSensorData = Await.result(system.ask(replyTo => GetAllSensorData(replyTo)) map {
     sensorDataList => {
-      println("sensor-name,min,average,max")
-      val orderedSensorData = sort(
+      sort(
         sensorDataList,
         Ordering.Int.reverse,
         (sensorData: SensorData) => sensorData.maybeMaximumReading.getOrElse(Int.MinValue))
-      orderedSensorData.foreach(println)
     }
-      system.terminate()
-  } recoverWith{
-    case e: Exception => println(e.toString)
-      system.terminate()
-      Future()
-  }
+  }, timeout.duration)
 
+  orderedSensorData.map(println)
+
+  system.terminate()
 
 }
 
