@@ -4,7 +4,7 @@ import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, Scheduler}
 import akka.util.Timeout
-import com.metrics.humidity.Sensor.{FailedReadings, RecordSensorHumidity, Sensor, SensorCommand, SensorDataReading}
+import com.metrics.humidity.Sensor.{FailedReadings, PassedReadings, RecordSensorHumidity, Sensor, SensorCommand, SensorDataReading}
 
 import java.util.concurrent.TimeUnit
 import scala.concurrent.{ExecutionContextExecutor, Future}
@@ -12,6 +12,9 @@ import scala.concurrent.{ExecutionContextExecutor, Future}
 object SensorFactory {
   sealed trait Command
 
+  def sort(sensorDataList: Seq[SensorData],ordering: Ordering[Int], getSensorValue: SensorData=> Int) = {
+    sensorDataList.sortBy(getSensorValue)(ordering)
+  }
   final case class SensorData(name: String, maybeMinimumReading: Option[Int], maybeMaximumReading: Option[Int], maybeAverageReading: Option[Int]) {
     override def toString: String = {
       s"$name,${maybeMinimumReading.getOrElse("NaN")},${maybeAverageReading.getOrElse("NaN")},${maybeMaximumReading.getOrElse("NaN")}"
@@ -30,7 +33,7 @@ object SensorFactory {
     sensors.find(nameAndActor => nameAndActor._1 == name).map(_._2)
   }
 
-  def behavior(sensors: Seq[(String, ActorRef[SensorCommand])] = Seq.empty): Behavior[Command] =
+  def behaviour(sensors: Seq[(String, ActorRef[SensorCommand])] = Seq.empty): Behavior[Command] =
     Behaviors.setup[Command] { ctx =>
       implicit val context: ExecutionContextExecutor = ctx.executionContext
       implicit val scheduler: Scheduler = ctx.system.scheduler
@@ -44,7 +47,7 @@ object SensorFactory {
           findActor(sensors, name).fold {
             val actor: ActorRef[SensorCommand] = ctx.spawn(new Sensor(name).behavior(), name)
             actor ! RecordSensorHumidity(maybeReading)
-            behavior(sensors.appended((name, actor)))
+            behaviour(sensors.appended((name, actor)))
           } { actor =>
             actor ! RecordSensorHumidity(maybeReading)
             Behaviors.same
@@ -64,16 +67,14 @@ object SensorFactory {
           Future.sequence(sensors.map {
             case (_, actor) => actor.ask(replyTo => FailedReadings(replyTo))
           }).map {
-            println("completed future")
             replyTo ! _.sum
           }
           Behaviors.same
 
         case TotalProcessed(replyTo) =>
           Future.sequence(sensors.map {
-            case (_, actor) => actor.ask(replyTo => FailedReadings(replyTo))
+            case (_, actor) => actor.ask(replyTo => PassedReadings(replyTo))
           }).map {
-            println("completed future")
             replyTo ! _.sum
           }
           Behaviors.same

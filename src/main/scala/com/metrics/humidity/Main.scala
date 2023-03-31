@@ -12,19 +12,18 @@ import scala.io.Source
 
 
 object Main extends App {
-
   val system: ActorSystem[Command] =
-    ActorSystem(SensorFactory.behavior(), "HumidityMetrics")
+    ActorSystem(SensorFactory.behaviour(), "HumidityMetrics")
   implicit val scheduler: Scheduler = system.scheduler
   implicit val context: ExecutionContextExecutor = system.executionContext
-  implicit val timeout: Timeout = Timeout.apply(30, TimeUnit.SECONDS)
+  implicit val timeout: Timeout = Timeout.apply(4, TimeUnit.SECONDS)
 
   import SensorFactory._
 
   def getListOfFiles(directoryName: String): Seq[Source] = {
     val directory = new File(directoryName)
     if (directory.exists && directory.isDirectory)
-      directory.list().take(3).map(name => Source.fromFile(s"${directory.getAbsolutePath}/$name"))
+      directory.list().map(name => Source.fromFile(s"${directory.getAbsolutePath}/$name"))
     else
       Seq.empty
   }
@@ -54,10 +53,16 @@ object Main extends App {
   system.ask(replyTo => GetAllSensorData(replyTo)) map {
     sensorDataList => {
       println("sensor-name,min,average,max")
-      sensorDataList.sortBy(s => s.maybeAverageReading.getOrElse(Int.MinValue))(Ordering.Int.reverse).foreach(println)
+      val orderedSensorData = sort(
+        sensorDataList,
+        Ordering.Int.reverse,
+        (sensorData: SensorData) => sensorData.maybeMaximumReading.getOrElse(Int.MinValue))
+      orderedSensorData.foreach(println)
     }
+      system.terminate()
   } recoverWith{
     case e: Exception => println(e.toString)
+      system.terminate()
       Future()
   }
 

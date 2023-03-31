@@ -1,7 +1,7 @@
 package com.metrics.humidity
 
-import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
 
 object Sensor {
   sealed trait SensorCommand
@@ -14,7 +14,8 @@ object Sensor {
 
   final case class FailedReadings(replyTo: ActorRef[Int]) extends SensorCommand
 
-  class Sensor(name: String, humidityReadings: Seq[Option[Int]] = Seq()) {
+  class Sensor(name: String) {
+    var  humidityReadings: Seq[Option[Int]] = Seq.empty
     private def average: Option[Int] = {
       if (allValidReadings.isEmpty) {
         None
@@ -24,12 +25,9 @@ object Sensor {
 
     private def allValidReadings = humidityReadings.filter(_.isDefined).map(_.get)
 
-    def behavior(): Behavior[SensorCommand] =
-      Behaviors.setup[SensorCommand] { _ =>
+    final def behavior(): Behavior[SensorCommand] =
+      Behaviors.setup[SensorCommand] { ctx =>
         Behaviors.receiveMessage {
-          case RecordSensorHumidity(reading) =>
-            new Sensor(name, humidityReadings :+ reading).behavior()
-
           case SensorDataReading(replyTo) =>
             val sensorData = SensorFactory.SensorData(name,
               allValidReadings.sorted.headOption,
@@ -47,6 +45,10 @@ object Sensor {
             val failed = humidityReadings.count(_.isEmpty)
             replyTo ! failed
             Behaviors.same
+
+          case RecordSensorHumidity(reading) =>
+            humidityReadings = humidityReadings :+ reading
+             Behaviors.same
         }
       }
   }

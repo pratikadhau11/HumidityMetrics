@@ -9,5 +9,7 @@ lazy val root = (project in file("."))
     name := "HumidityMetrics",
     libraryDependencies ++= Seq(
       "com.typesafe.akka" %% "akka-actor-typed" % "2.6.19",
+      "org.scalatest" %% "scalatest" % "3.1.4" % Test,
+      "com.typesafe.akka" %% "akka-actor-testkit-typed" % "2.6.19" % Test,
     )
   )
